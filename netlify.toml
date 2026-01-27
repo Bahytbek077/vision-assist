@@ -1,5 +1,4 @@
 # netlify.toml
 [build]
-  # base = "subfolder"  # если проект не в корне, потом настроишь
   command = "npm run build"
-  publish = "dist"      # или "build", если твой проект собирается в папку build
+  publish = "dist"  # поменяй на "build", если у тебя папка build
