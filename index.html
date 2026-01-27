@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ассистент для незрячих</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a1a2e;
+            color: white;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4">
+    <div class="max-w-3xl mx-auto">
+        <!-- Заголовок -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold mb-2">Ассистент для незрячих</h1>
+        </div>
+
+        <!-- Видео -->
+        <div class="bg-black rounded-xl overflow-hidden mb-6 relative" style="aspect-ratio: 16/9;">
+            <video id="video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            <div id="placeholder" class="absolute inset-0 flex items-center justify-center bg-gray-900">
+                <p class="text-gray-500 text-xl">Нажмите "Запустить"</p>
+            </div>
+        </div>
+
+        <!-- Описание -->
+        <div class="bg-gray-800 rounded-xl p-6 mb-6 min-h-[120px]">
+            <p id="description" class="text-xl text-gray-400 italic">Ожидание...</p>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <button id="startBtn" class="p-8 rounded-xl text-2xl font-bold bg-green-600 hover:bg-green-700 active:bg-green-800">
+                Запустить
+            </button>
+            <button id="stopBtn" disabled class="p-8 rounded-xl text-2xl font-bold bg-gray-700 text-gray-500 cursor-not-allowed">
+                Остановить
+            </button>
+        </div>
+
+        <!-- Настройки -->
+        <div class="bg-gray-800 rounded-xl p-6">
+            <div class="mb-4">
+                <label class="block text-lg mb-2">Частота анализа:</label>
+                <input type="range" id="interval" min="2" max="10" value="3" class="w-full h-2">
+                <p class="text-gray-400 mt-1"><span id="intervalValue">3</span> секунды</p>
+            </div>
+            <div>
+                <label class="block text-lg mb-2">Скорость речи:</label>
+                <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1.2" class="w-full h-2">
+                <p class="text-gray-400 mt-1"><span id="speedValue">1.2</span>x</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stream = null;
+        let captureInterval = null;
+        let currentInterval = 3000;
+        const synth = window.speechSynthesis;
+        let speechQueue = [];
+        let isSpeaking = false;
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const placeholder = document.getElementById('placeholder');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const description = document.getElementById('description');
+        const intervalSlider = document.getElementById('interval');
+        const speedSlider = document.getElementById('speed');
+        const intervalValue = document.getElementById('intervalValue');
+        const speedValue = document.getElementById('speedValue');
+
+        intervalSlider.addEventListener('input', (e) => {
+            currentInterval = parseInt(e.target.value) * 1000;
+            intervalValue.textContent = e.target.value;
+            if (captureInterval) {
+                clearInterval(captureInterval);
+                captureInterval = setInterval(captureFrame, currentInterval);
+            }
+        });
+
+        speedSlider.addEventListener('input', (e) => {
+            speedValue.textContent = e.target.value;
+        });
+
+        function speak(text) {
+            speechQueue.push(text);
+            if (!isSpeaking) processQueue();
+        }
+
+        function processQueue() {
+            if (speechQueue.length === 0) {
+                isSpeaking = false;
+                return;
+            }
+            isSpeaking = true;
+            const text = speechQueue.shift();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ru-RU';
+            utterance.rate = parseFloat(speedSlider.value);
+            utterance.onend = processQueue;
+            synth.speak(utterance);
+        }
+
+        async function analyzeImage(imageBase64) {
+            try {
+                description.textContent = 'Анализирую...';
+                description.className = 'text-xl text-yellow-400 italic';
+
+                const response = await fetch('/.netlify/functions/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageBase64.split(',')[1] })
+                });
+
+                if (!response.ok) throw new Error('Ошибка анализа');
+
+                const data = await response.json();
+                description.textContent = data.description;
+                description.className = 'text-xl text-white';
+                speak(data.description);
+
+            } catch (err) {
+                description.textContent = 'Ошибка: ' + err.message;
+                description.className = 'text-xl text-red-400';
+                speak('Ошибка анализа');
+            }
+        }
+
+        function captureFrame() {
+            if (!video.videoWidth) return;
+            canvas.width = 800;
+            canvas.height = (video.videoHeight / video.videoWidth) * 800;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            analyzeImage(canvas.toDataURL('image/jpeg', 0.8));
+        }
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                speak('Запускаю камеру');
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
+
+                video.srcObject = stream;
+                placeholder.classList.add('hidden');
+                speak('Камера запущена');
+
+                captureInterval = setInterval(captureFrame, currentInterval);
+                setTimeout(captureFrame, 1000);
+
+                startBtn.disabled = true;
+                startBtn.className = 'p-8 rounded-xl text-2xl font-bold bg-gray-700 text-gray-500 cursor-not-allowed';
+                stopBtn.disabled = false;
+                stopBtn.className = 'p-8 rounded-xl text-2xl font-bold bg-red-600 hover:bg-red-700 active:bg-red-800';
+
+            } catch (err) {
+                description.textContent = 'Ошибка доступа к камере';
+                description.className = 'text-xl text-red-400';
+                speak('Ошибка доступа к камере');
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (captureInterval) clearInterval(captureInterval);
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+            placeholder.classList.remove('hidden');
+            description.textContent = 'Остановлено';
+            description.className = 'text-xl text-gray-400 italic';
+            speak('Остановлено');
+
+            startBtn.disabled = false;
+            startBtn.className = 'p-8 rounded-xl text-2xl font-bold bg-green-600 hover:bg-green-700 active:bg-green-800';
+            stopBtn.disabled = true;
+            stopBtn.className = 'p-8 rounded-xl text-2xl font-bold bg-gray-700 text-gray-500 cursor-not-allowed';
+        });
+    </script>
+</body>
+</html>
