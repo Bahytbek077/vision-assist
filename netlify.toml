@@ -1,7 +1,5 @@
+# netlify.toml
 [build]
-  functions = "netlify/functions"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+  # base = "subfolder"  # если проект не в корне, потом настроишь
+  command = "npm run build"
+  publish = "dist"      # или "build", если твой проект собирается в папку build
