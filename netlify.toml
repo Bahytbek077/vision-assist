@@ -1,6 +1,6 @@
+# netlify.toml
 [build]
   command = "npm run build"
   publish = "dist"
-
-[functions]
-  directory = "netlify/functions"
+  # optionally set base if site is in a subfolder
+  # base = "client"
